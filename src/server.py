@@ -270,7 +270,7 @@ class MariaDBServer:
         logger.debug(f"Checking if '{database_name}.{table_name}' is a vector store.")
 
         if not self._is_valid_identifier(database_name) or \
-           not self._is_valid_identifier(table_name)
+           not self._is_valid_identifier(table_name):
             logger.warning(f"_is_vector_store called with invalid names: db='{database_name}', table='{table_name}'")
             return False
 
