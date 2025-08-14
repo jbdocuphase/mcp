@@ -179,6 +179,25 @@ class MariaDBServer:
                 i += 1
         return True
     
+    def _quote_identifier(self, identifier: str) -> str:
+        """
+        quote's an identifier
+        If already quoted, returns as-is. If unquoted, wraps in backticks.
+        
+        Parameters:
+        - identifier (str): The identifier to quote
+        
+        Returns:
+        - str: quoted identifier
+        """
+        if identifier.startswith('`') and identifier.endswith('`'):
+            # Already quoted, return as-is
+            return identifier
+        else:
+            # Unquoted, wrap in backticks and escape any existing backticks
+            escaped_content = identifier.replace('`', '``')
+            return f'`{escaped_content}`'
+    
     def _is_valid_identifier(self, identifier: str) -> bool:
         """
         Validates MariaDB identifier (database, table, column names, etc.).
@@ -344,7 +363,7 @@ class MariaDBServer:
             logger.warning(f"TOOL WARNING: get_table_schema called with invalid table_name: {table_name}")
             raise ValueError(f"Invalid table name provided: {table_name}")
 
-        sql = f"DESCRIBE `{database_name}`.`{table_name}`"
+        sql = f"DESCRIBE {self._quote_identifier(database_name)}.{self._quote_identifier(table_name)}"
         try:
             schema_results = await self._execute_query(sql)
             schema_info = {}
@@ -480,7 +499,7 @@ class MariaDBServer:
             logger.info(f"TOOL END: create_database. {message}")
             return {"status": "exists", "message": message, "database_name": database_name}
 
-        sql = f"CREATE DATABASE IF NOT EXISTS `{database_name}`;"
+        sql = f"CREATE DATABASE IF NOT EXISTS {self._quote_identifier(database_name)};"
 
         try:
             await self._execute_query(sql, database=None)
@@ -568,7 +587,7 @@ class MariaDBServer:
 
         # --- SQL Query for Vector Store Table Creation ---
         schema_query = f"""
-        CREATE TABLE IF NOT EXISTS `{vector_store_name}` (
+        CREATE TABLE IF NOT EXISTS {self._quote_identifier(vector_store_name)} (
             id VARCHAR(36) NOT NULL DEFAULT UUID_v7() PRIMARY KEY,
             document TEXT NOT NULL,
             embedding VECTOR({embedding_length}) NOT NULL,
@@ -704,7 +723,7 @@ class MariaDBServer:
             return {"status": "not_vector_store", "message": message}
             
         # --- SQL Query for Deletion ---
-        drop_query = f"DROP TABLE IF EXISTS `{vector_store_name}`;"
+        drop_query = f"DROP TABLE IF EXISTS {self._quote_identifier(vector_store_name)};"
 
         try:
             await self._execute_query(drop_query, database=database_name)
@@ -754,7 +773,7 @@ class MariaDBServer:
         # Prepare metadata JSON
         metadata_json = [json.dumps(m) for m in metadata]
         # Prepare values for batch insert
-        insert_query = f"INSERT INTO `{database_name}`.`{vector_store_name}` (document, embedding, metadata) VALUES (%s, VEC_FromText(%s), %s)"
+        insert_query = f"INSERT INTO {self._quote_identifier(database_name)}.{self._quote_identifier(vector_store_name)} (document, embedding, metadata) VALUES (%s, VEC_FromText(%s), %s)"
         inserted = 0
         errors = []
         for doc, emb, meta in zip(documents, embeddings, metadata_json):
@@ -805,7 +824,7 @@ class MariaDBServer:
                 document,
                 metadata,
                 VEC_DISTANCE_COSINE(embedding, VEC_FromText(%s)) AS distance
-            FROM `{database_name}`.`{vector_store_name}`
+            FROM {self._quote_identifier(database_name)}.{self._quote_identifier(vector_store_name)}
             ORDER BY distance ASC
             LIMIT %s
         """
